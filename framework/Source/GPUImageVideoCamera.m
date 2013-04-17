@@ -70,6 +70,7 @@ NSString *const kGPUImageYUVVideoRangeConversionForLAFragmentShaderString = SHAD
 
 @interface GPUImageVideoCamera () 
 {
+  BOOL _audioSessionInitialized;
 	AVCaptureDeviceInput *audioInput;
 	AVCaptureAudioDataOutput *audioOutput;
     NSDate *startingCaptureTime;
@@ -711,7 +712,9 @@ NSString *const kGPUImageYUVVideoRangeConversionForLAFragmentShaderString = SHAD
 
 - (void)processAudioSampleBuffer:(CMSampleBufferRef)sampleBuffer;
 {
-    [self.audioEncodingTarget processAudioBuffer:sampleBuffer]; 
+  if (self.audioEncodingTarget) {
+    [self.audioEncodingTarget processAudioBuffer:sampleBuffer];
+  }
 }
 
 - (void)convertYUVToRGBOutput;
@@ -855,43 +858,28 @@ NSString *const kGPUImageYUVVideoRangeConversionForLAFragmentShaderString = SHAD
 - (void)setAudioEncodingTarget:(GPUImageMovieWriter *)newValue;
 {
     runSynchronouslyOnVideoProcessingQueue(^{
+
+      if (newValue != nil && ! _audioSessionInitialized) {
         [_captureSession beginConfiguration];
-        
-        if (newValue == nil)
-        {
-            if (audioOutput)
-            {
-                [_captureSession removeInput:audioInput];
-                [_captureSession removeOutput:audioOutput];
-                audioInput = nil;
-                audioOutput = nil;
-                _microphone = nil;
-            }
+        _microphone = [AVCaptureDevice defaultDeviceWithMediaType:AVMediaTypeAudio];
+        audioInput = [AVCaptureDeviceInput deviceInputWithDevice:_microphone error:nil];
+        if ([_captureSession canAddInput:audioInput]) {
+          [_captureSession addInput:audioInput];
         }
-        else
-        {
-            _microphone = [AVCaptureDevice defaultDeviceWithMediaType:AVMediaTypeAudio];
-            audioInput = [AVCaptureDeviceInput deviceInputWithDevice:_microphone error:nil];
-            if ([_captureSession canAddInput:audioInput])
-            {
-                [_captureSession addInput:audioInput];
-            }
-            audioOutput = [[AVCaptureAudioDataOutput alloc] init];
-            
-            if ([_captureSession canAddOutput:audioOutput])
-            {
-                [_captureSession addOutput:audioOutput];
-            }
-            else
-            {
-                NSLog(@"Couldn't add audio output");
-            }
-            [audioOutput setSampleBufferDelegate:self queue:audioProcessingQueue];
+        audioOutput = [[AVCaptureAudioDataOutput alloc] init];
+
+        if ([_captureSession canAddOutput:audioOutput]) {
+          [_captureSession addOutput:audioOutput];
+        } else {
+          NSLog(@"Couldn't add audio output");
         }
-        
+        [audioOutput setSampleBufferDelegate:self queue:audioProcessingQueue];
         [_captureSession commitConfiguration];
-        
-        [super setAudioEncodingTarget:newValue];
+        _audioSessionInitialized = YES;
+      }
+
+      [super setAudioEncodingTarget:newValue];
+
     });
 }
 
